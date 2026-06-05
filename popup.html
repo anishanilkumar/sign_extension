@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Content Authenticity Checker</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+<div id="app">
+
+  <header>
+    <div class="header-top">
+      <h1>Content Authenticity</h1>
+    </div>
+    <div class="db-status-row">
+      <span class="status-dot dot-unknown" id="db-dot"></span>
+      <span id="db-status-text">Checking...</span>
+      <button class="icon-btn" id="refresh-btn" title="Refresh database">&#x21BB;</button>
+    </div>
+  </header>
+
+  <div class="db-meta hidden" id="db-meta">
+    <span id="db-count">0 entries</span>
+    <span id="db-time"></span>
+  </div>
+
+  <div class="summary-row" id="summary-row">
+    <div class="badge badge-green hidden" id="badge-authentic">
+      <span class="count" id="count-authentic">0</span>
+      <span class="label">Authentic</span>
+    </div>
+    <div class="badge badge-red hidden" id="badge-modified">
+      <span class="count" id="count-modified">0</span>
+      <span class="label">Modified</span>
+    </div>
+    <p class="no-matches" id="no-matches">No registered images on this page</p>
+  </div>
+
+  <div id="results-list"></div>
+
+  <div class="settings-section">
+    <button class="settings-toggle" id="settings-toggle">&#9881; Settings</button>
+    <div class="settings-form hidden" id="settings-form">
+      <label for="server-url-input">Server URL</label>
+      <input type="text" id="server-url-input" placeholder="https://sign.authentiverse.net">
+      <button class="btn-save" id="save-settings-btn">Save &amp; Refresh</button>
+    </div>
+  </div>
+
+</div>
+<script src="popup.js"></script>
+</body>
+</html>

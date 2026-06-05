@@ -1,0 +1,43 @@
+{
+  "manifest_version": 2,
+  "name": "Content Authenticity Checker",
+  "version": "1.1.0",
+  "description": "Verify image authenticity against a locally-cached signed content database. No data is sent to any server.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "content-authenticity-checker@authentiverse.net",
+      "strict_min_version": "142.0",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
+    }
+  },
+  "permissions": [
+    "storage",
+    "activeTab",
+    "alarms",
+    "tabs",
+    "<all_urls>",
+    "file:///*"
+  ],
+  "background": {
+    "scripts": ["lib/openpgp.min.js", "phash.js", "background.js"],
+    "persistent": false
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*", "file:///*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "browser_action": {
+    "default_popup": "popup.html",
+    "default_icon": "icons/icon.svg",
+    "default_title": "Content Authenticity Checker"
+  },
+  "icons": {
+    "48": "icons/icon.svg",
+    "96": "icons/icon.svg"
+  }
+}
