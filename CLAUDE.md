@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Development
 
-There is no build step. The extension runs directly from source.
+There is no compile/transpile step — the extension runs directly from source. The only "build" is zipping the runtime files for distribution (see Packaging).
 
 **Load in Firefox:**
 1. Open `about:debugging` → "This Firefox" → "Load Temporary Add-on"
@@ -15,6 +15,23 @@ There is no build step. The extension runs directly from source.
 **Inspect the background page:** on `about:debugging`, click "Inspect" next to the extension — this opens DevTools for the background page, where you can see console logs from `background.js` and `phash.js` and inspect `browser.storage.local`.
 
 **Inspect the popup:** right-click the toolbar icon → "Inspect Element".
+
+**Manual test harness:** `eras_demo/index.html` is a local gallery page serving the same image three ways — original (`taylor-swift-eras-tour.jpg`), a re-encode (`.png`), and a tampered copy (`...altered.jpeg`) — so you can eyeball the verified / authentic / possibly_modified badge tiers against a registered original. Open it via `file://` (the manifest grants `file:///*`).
+
+## Packaging
+
+A release is just a zip of the **runtime files only** (everything the manifest references), named after the `version` in `manifest.json`. `*.zip` / `*.xpi` are gitignored, so build artifacts are never committed.
+
+**Always bump `version` in `manifest.json` before building** — every new build gets a new version (AMO rejects a re-upload of an existing version, and the filename is derived from it). Use semver: patch for fixes, minor for new features.
+
+Use the tracked **`build.sh`** (runtime files only, named after the manifest version) from the repo root:
+
+```bash
+./build.sh --bump patch    # bump version (patch|minor|major) in manifest.json, then build
+./build.sh                 # build the current manifest version as-is
+```
+
+`build.sh` reads the version, verifies every runtime file exists, removes stale zips, and zips the manifest-referenced files only. It **refuses to overwrite an existing version's zip** — so a forgotten bump fails loudly instead of producing an unuploadable artifact; recover with `./build.sh --bump patch`. Deliberately **excluded** from the zip: `CLAUDE.md`, `CLAUDE_SIGN.md`, `eras_demo/`, `build.sh`, and any dotfiles. `CLAUDE_SIGN.md` documents the separate FastAPI signing **server** (the source of `/api/db/export`); it is not part of this extension.
 
 ## Architecture
 
@@ -33,12 +50,15 @@ The background page has a real DOM (MV2), which is why `document.createElement` 
 ### 2. Content script (`content.js`)
 Runs in every http/https/file page. Does no hashing itself — it only:
 - Collects `<img>` src URLs and sends them to the background via `scanImages`
-- Draws a corner **badge** (✓ green for `verified`/`authentic`, ✗ red for `possibly_modified`/`signature_invalid`) into a single fixed-position layer anchored to each image's viewport rect — survives clipped/`object-fit` feed containers (e.g. Facebook) where an `outline` failed. `data-auth-status` / `data-auth-url` attributes track overlaid elements; badges re-anchor on scroll/resize
+- Draws a corner **badge** (✓ green for `verified`/`authentic`, ✗ red for `possibly_modified`/`signature_invalid`) into a single fixed-position layer anchored to each image's viewport rect — survives clipped/`object-fit` feed containers (e.g. Facebook) where an `outline` failed. `data-auth-status` / `data-auth-url` attributes track overlaid elements; badges re-anchor on scroll/resize. The `signature_invalid` badge is enlarged, ringed, and CSS-pulsed so it can't be mistaken for a plain `possibly_modified` cross
+- On badge hover, shows a **tooltip** built from the full per-image scan result (creator, match %, signature status, key fingerprint, registered date) — the result object, not just the status string, is kept in `applyResults`/`applyOverlay` for this
 - Debounces re-scans via `MutationObserver` (1.5 s) to handle SPAs and lazy loading; re-scans on `triggerScan` after a background-cache loss
 - Listens for `scrollToImage` to animate a yellow flash and scroll to a specific image
 
+Badge/tooltip appearance lives in a single injected `<style>` element (`ensureBadgeStyles`), not inline styles — a stylesheet is CSP-safe and can express the keyframe pulse. All tooltip/popup DOM that interpolates DB or page values is built with `textContent` only (never `innerHTML`), so untrusted strings can't inject markup.
+
 ### 3. Popup (`popup.html` + `popup.js`)
-Queries the background for DB info (`getDbInfo`) and cached tab results (`getCachedResults`). Sends `scrollToImage` directly to the content script via `browser.tabs.sendMessage` (not through the background). Receives live DB status pushes via `browser.runtime.onMessage` while open.
+Queries the background for DB info (`getDbInfo`) and cached tab results (`getCachedResults`). Each result row is a collapsible **accordion** (one open at a time; a lone result auto-opens) whose body holds a thumbnail plus signature details; clicking the thumbnail sends `scrollToImage` to the content script via `browser.tabs.sendMessage` (not through the background). Receives live DB status pushes via `browser.runtime.onMessage` while open.
 
 ## Critical constraint: pHash compatibility
 
@@ -62,6 +82,10 @@ These are verified byte-for-byte against PIL in CI-style parity harnesses. If th
 3. **64-bit perceptual** — Hamming ≤ 9/64 (`MATCH_MAX_DISTANCE_64`) for legacy entries without `phash256`.
 
 After a hash match, `verifyEntrySignature` (in `background.js`, using vendored `lib/openpgp.min.js`) verifies the entry's OpenPGP clearsigned `signed_assertion` against `creator_public_key` **and** confirms the matched hash is the value inside the signed JSON. Failure forces status `signature_invalid`. `signatureValid` is `true` / `false` / `null` (no signature material). Thresholds mirror the server's `fingerprint.py`.
+
+Each scanned image returns `{ url, status, matchType, distance, bits, entry, signatureValid, signatureReason, hashes }` (or a bare `{ url, status }` for `hash_failed` / `not_found`). The content-script tooltip and popup both consume this shape.
+
+**Signature display invariant** (content tooltip and popup agree): a signature reads **Valid** only when `signatureValid === true` **and** the match is `verified`/`authentic` — any modified image reports **Invalid**, because the signature covers the registered original and a changed image is not that original. `null` shows as "Not checked". Keep both renderers in sync if this rule changes.
 
 ## Server dependency
 

@@ -104,6 +104,11 @@ function renderDbStatus({ status, count, fetchedAt, error }) {
 const OK_STATUSES  = ['verified', 'authentic'];
 const BAD_STATUSES = ['possibly_modified', 'signature_invalid'];
 
+function scrollToImageOnPage(url) {
+    if (activeTabId === null) return;
+    browser.tabs.sendMessage(activeTabId, { type: 'scrollToImage', url }).catch(() => {});
+}
+
 function renderResults(results) {
     const list = el('results-list');
 
@@ -174,11 +179,34 @@ function renderResults(results) {
         const fname = makeEl('span', 'result-filename', filename);
         fname.title = result.url;
         header.appendChild(fname);
-        const badgeClass = isExact ? 'rb-verified' : isOk ? 'rb-authentic' : 'rb-modified';
+        const badgeClass = isExact ? 'rb-verified'
+            : isOk ? 'rb-authentic'
+            : status === 'signature_invalid' ? 'rb-siginvalid'
+            : 'rb-modified';
         header.appendChild(makeEl('span', `result-badge ${badgeClass}`, badgeLabel));
+        header.appendChild(makeEl('span', 'result-chevron', '▸'));
         item.appendChild(header);
 
-        item.appendChild(makeEl('div', 'result-subtitle', subtitle));
+        // Collapsible body — hidden until this row is expanded.
+        const body = makeEl('div', 'result-body');
+
+        // Thumbnail of the page image; clicking it locates the image on the page.
+        const thumbWrap = makeEl('div', 'result-thumb-wrap');
+        const thumb = document.createElement('img');
+        thumb.className = 'result-thumb';
+        thumb.alt = filename;
+        thumb.loading = 'lazy';
+        thumb.title = 'Click to locate this image on the page';
+        thumb.addEventListener('error', () => thumbWrap.classList.add('hidden'));
+        thumb.addEventListener('click', (e) => {
+            e.stopPropagation();
+            scrollToImageOnPage(result.url);
+        });
+        thumb.src = result.url;
+        thumbWrap.appendChild(thumb);
+        body.appendChild(thumbWrap);
+
+        body.appendChild(makeEl('div', 'result-subtitle', subtitle));
 
         const details = makeEl('div', 'result-details');
 
@@ -212,33 +240,39 @@ function renderResults(results) {
         }
 
         if (entry.creator_fingerprint) {
+            // A changed image is not the signed original, so only exact/authentic
+            // matches read as Valid; anything modified is Invalid.
             let sig;
-            if (result.signatureValid === true) {
-                sig = makeEl('span', 'sig-valid', '✓ Valid');
-            } else if (result.signatureValid === false) {
-                sig = makeEl('span', 'sig-invalid', '✗ Invalid');
-            } else {
+            if (result.signatureValid === null || result.signatureValid === undefined) {
                 sig = makeEl('span', 'sig-unknown', '— Not checked');
+            } else if (result.signatureValid === true && isOk) {
+                sig = makeEl('span', 'sig-valid', '✓ Valid');
+            } else {
+                sig = makeEl('span', 'sig-invalid', '✗ Invalid');
             }
             const fp = makeEl('span', 'fingerprint', shortFingerprint(entry.creator_fingerprint));
             fp.title = entry.creator_fingerprint;
             details.appendChild(row('Signature', [sig, fp]));
         }
 
-        item.appendChild(details);
+        body.appendChild(details);
+        item.appendChild(body);
 
-        // Click → scroll to and highlight the image on the page
-        item.addEventListener('click', () => {
-            if (activeTabId !== null) {
-                browser.tabs.sendMessage(activeTabId, {
-                    type: 'scrollToImage',
-                    url: result.url
-                }).catch(() => {});
-            }
+        // Header click → accordion: open this row and collapse any other.
+        header.addEventListener('click', () => {
+            const willOpen = !item.classList.contains('expanded');
+            list.querySelectorAll('.result-item.expanded')
+                .forEach(other => other.classList.remove('expanded'));
+            if (willOpen) item.classList.add('expanded');
         });
 
         list.appendChild(item);
     });
+
+    // A lone match has nothing to choose between — open it by default.
+    if (matched.length === 1) {
+        list.querySelector('.result-item')?.classList.add('expanded');
+    }
 }
 
 // ── Actions ───────────────────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Content Authenticity Checker",
-  "version": "1.1.0",
+  "version": "1.2.2",
   "description": "Verify image authenticity against a locally-cached signed content database. No data is sent to any server.",
   "browser_specific_settings": {
     "gecko": {
